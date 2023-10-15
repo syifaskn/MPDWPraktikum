@@ -1,0 +1,324 @@
+---
+title: "G1401211012_Syifa Khairunnisa_Pertemuan 6 dan 7"
+author: "Syifa Khairunnisa"
+date: "2023-10-15"
+output: html_document
+---
+
+# Packages
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(forecast)
+library(TSA)
+library(TTR)
+library(aTSA)
+library(graphics)
+```
+
+# Data
+```{r}
+library(rio)
+data <- import("https://raw.githubusercontent.com/syifaskn/MPDWPraktikum/main/Pertemuan%206%20dan%207/DataTempSulsel.csv")
+data
+dim(data)
+```
+
+# Mengubah data menjadi time series 'ts'
+```{r}
+data.ts <- ts(data$MaxTemp)
+```
+
+# Membagi data (80:20)
+Pembagian data ini dilakukan dengan proporsi / perbandingan, yaitu 80:20. 80% untuk data latih, dan 20% untuk data uji.
+```{r}
+data.train <- data[1:104,]
+data.test <- data[105:130,]
+train.ts <- ts(data.train$MaxTemp)
+test.ts <- ts(data.test$MaxTemp)
+```
+
+# Eksplorasi Data
+Sebelum masuk dalam tahap pemodelan, dilakukan eksplorasi data dengan plot deret waktu untuk melihat pola data.
+
+## Plot Data Penuh
+```{r}
+ts.plot(data.ts, xlab="Time Period ", ylab="Max Temperatue", 
+        main = "Max Temperature in South Sulawesi 2010-2020")
+```
+
+Terlihat pada plot yang ditampilan bahwa data suhu maksimum yang digunakan berpola data musiman.
+
+## Plot Data Latih
+```{r}
+plot(train.ts, col="#e29578",main="Plot Data Latih")
+points(train.ts)
+```
+
+Berdasarkan plot data deret waktu pada data latih, terlihat bahwa data
+cenderung memiliki pola musiman sehingga  mengindikasikan bahwa data
+stasioner dalam rataan maupun ragam. Namun, untuk memastikan hal tersebut, akan dilakukan uji lanjut ke depannya.
+
+## Plot Data Uji
+```{r}
+plot(test.ts, col="#f26a8d",main="Plot Data Uji")
+points(test.ts)
+```
+
+# Cek KEstasioneran Data
+```{r}
+# plot ACF
+acf(train.ts)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *tails off* dan membentuk gelombang sinus. Hal ini mengindikasi bahwa data stasioner dalam rataan.
+
+```{r}
+# uji ADF
+tseries::adf.test(train.ts)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa data stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF.
+
+
+```{r}
+# plot Box-Cox
+index <- seq(1:104)
+bc = boxcox(train.ts~index, lambda = seq(0,10,by=1))
+#Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+
+Plot Boxcox menunjukkan nilai *rounded value* ($\lambda$) optimum
+sebesar **0** dan pada selang kepercayaan 95% nilai memiliki
+batas bawah **0** dan batas atas **3.4343434**. Selang tersebut memuat nilai satu sehingga dapat dikatakan bahwa data stasioner dalam ragam.
+
+# Identifikasi Model
+
+## Plot ACF
+```{r}
+acf(train.ts)
+```
+Berdasarkan Plot ACF, terlihat *cuts off* pada lag pertama sehingga dapat kita asumsikan model yang terbentuk adalah ARIMA(0,0,1).
+
+## Plot PACF
+```{r}
+pacf(train.ts)
+```
+
+Selanjutnya, berdasarkan plot PACF, terlihat *cuts off* pada lag keempat sehingga model yang terbentuk adalah ARIMA(1,0,0)
+
+## Plot EACF
+Selain dengan plot ACF dan PACF, penentuan spesifikasi model dilakukan dengan *extended ACF* (EACF) berikut ini.
+
+```{r}
+eacf(train.ts)
+```
+
+Menggunakan plot EACF, dapat diambil beberapa model dengan melihat ujung segitiga yang terbentuk, antara lain ARIMA(2,0,2), ARIMA(2,0,3), ARIMA(3,0,2), dan ARIMA(3,0,3).
+
+# Pendugaan Parameter Model Tentatif
+
+## ARIMA(0,0,1)
+
+```{r}
+model1 = Arima(train.ts, order=c(0,0,1),method="ML")
+summary(model1) #AIC = 147.85
+lmtest::coeftest(model1) #seluruh parameter signifikan
+```
+
+## ARIMA(1,0,0)
+
+```{r}
+model2 = Arima(train.ts, order=c(1,0,0),method="ML")
+summary(model2) #AIC = 150.29
+lmtest::coeftest(model2) #seluruh parameter signifikan
+```
+
+## ARIMA(2,0,2)
+
+```{r}
+model3 = Arima(train.ts, order=c(2,0,2),method="ML")
+summary(model3) #AIC = 107.85
+lmtest::coeftest(model3) #seluruh parameter signifikan
+```
+
+## ARIMA(2,0,3)
+
+```{r}
+model4 = Arima(train.ts, order=c(2,0,3),method="ML")
+summary(model4) #AIC = 106.54
+lmtest::coeftest(model4) #seluruh parameter signifikan
+```
+
+## ARIMA(3,0,2)
+
+```{r}
+model5 = Arima(train.ts, order=c(3,0,2),method="ML")
+summary(model5) #AIC = 98.49
+lmtest::coeftest(model5) #seluruh parameter signifikan
+```
+
+## ARIMA(3,0,3)
+
+```{r}
+model6 = Arima(train.ts, order=c(3,0,3),method="ML")
+summary(model6) #AIC = 107.78
+lmtest::coeftest(model6) #ar1 dan ar2 tidak signifikan
+```
+
+Berdasarkan pendugaan parameter di atas, nilai AIC terkecil dan yang keseluruhan parameternya signifikan adalah model ke-5, yaitu ARIMA(3,0,2) dengan nilai AIC sebesar 98.49, sehingga model tersebut lah yang dipilih.
+
+# Analisis Sisaan
+
+Model terbaik hasil identifikasi kemudian dicek asumsi sisaannya. Sisaan
+model ARIMA harus memenuhi asumsi normalitas, kebebasan sisaan, dan
+kehomogenan ragam. Diagnostik model dilakukan secara eksplorasi dan uji
+formal.
+
+## Eksplorasi Sisaan
+
+```{r}
+sisaan <- model5$residuals 
+par(mfrow=c(2,2)) 
+qqnorm(sisaan) 
+qqline(sisaan, col = "pink", lwd = 2) 
+plot(c(1:length(sisaan)),sisaan) 
+acf(sisaan) 
+pacf(sisaan) 
+par(mfrow = c(1,1))
+```
+
+Berdasarkan plot kuantil-kuantil normal, secara eksplorasi ditunjukkan sisaan menyebar normal mengikuti garis $45^{\circ}$. Kemudian dapat dilihat juga lebar pita sisaan yang cenderung sama menandakan bahwa sisaan memiliki ragam yang homogen. Akan tetapi, plot ACF dan PACF sisaan ARIMA(3,0,2) signifikan pada lag ke-2 sehingga sisaan tidak saling bebas. Kondisi ini akan diuji lebih lanjut dengan uji formal.
+
+## Uji Formal
+
+```{r}
+#1) Sisaan Menyebar Normal 
+ks.test(sisaan,"pnorm")  #tolak H0: sisaan tidak menyebar normal
+```
+
+Selain dengan eksplorasi, asumsi tersebut dapat diuji menggunakan uji
+formal. Pada tahapan ini uji formal yang digunakan untuk normalitas
+adalah uji Kolmogorov-Smirnov (KS). Hipotesis pada uji KS adalah sebagai
+berikut.
+
+$H_0$ : Sisaan menyebar normal
+
+$H_1$ : Sisaan tidak menyebar normal
+
+Berdasarkan uji KS tersebut, didapat *p-value* sebesar 1.588e-07 yang
+kurang dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa
+sisaan tidak menyebar normal. Hal ini tidak sesuai dengan hasil eksplorasi menggunakan plot kuantil-kuantil normal.
+
+```{r}
+#2) Sisaan saling bebas/tidak ada autokorelasi 
+Box.test(sisaan, type = "Ljung")  #tak tolak H0: sisaan saling bebas
+```
+
+Selanjutnya akan dilakukan uji formal untuk kebebasan sisaan menggunakan
+uji Ljung-Box. Hipotesis yang digunakan adalah sebagai berikut.
+
+$H_0$ : Sisaan saling bebas
+
+$H_1$ : Sisaan tidak tidak saling bebas
+
+Berdasarkan uji Ljung-Box tersebut, didapat *p-value* sebesar 0.5446
+yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan
+menandakan bahwa sisaan saling bebas.
+
+```{r}
+#3) Sisaan homogen 
+Box.test((sisaan)^2, type = "Ljung")  #tak tolak H0: sisaan homogen
+```
+
+Hipotesis yang digunakan untuk uji kehomogenan ragam adalah sebagai
+berikut.
+
+$H_0$ : Ragam sisaan homogen
+
+$H_1$ : Ragam sisaan tidak homogen
+
+Berdasarkan uji Ljung-Box terhadap sisaan kuadrat tersebut, didapat
+*p-value* sebesar 0.6222 yang lebih besar dari taraf nyata 5% sehingga
+tak tolak $H_0$ dan menandakan bahwa ragam sisaan homogen.
+
+```{r}
+#4) Nilai tengah sisaan sama dengan nol 
+t.test(sisaan, mu = 0, conf.level = 0.95)  #tak tolak h0: nilai tengah sisaan sama dengan 0
+```
+
+Terakhir, dengan uji-t, akan dicek apakah nilai tengah sisaan sama
+dengan nol. Hipotesis yang diujikan sebagai berikut.
+
+$H_0$ : nilai tengah sisaan sama dengan 0
+
+$H_1$ : nilai tengah sisaan tidak sama dengan 0
+
+Berdasarkan uji-ttersebut, didapat *p-value* sebesar 0.92 yang lebih
+besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa
+nilai tengah sisaan sama dengan nol.
+
+# Overfitting
+
+Tahapan selanjutnya adalah *overfitting* dilakukan dengan menaikkan orde AR(p) dan MA(q) dari model ARIMA(3,0,2) untuk melihat apakah terdapat model lain yang lebih baik dari model saat ini. Kandidat model *overfitting* adalah ARIMA(3,1,2), ARIMA(3,0,3), dan ARIMA(4,0,2).
+
+## ARIMA(3,1,2)
+
+```{r}
+modelover1=Arima(train.ts, order=c(3,1,2),method="ML")
+summary(modelover1) #123.04
+lmtest::coeftest(modelover1) #ar2 dan ma2 tidak signifikan
+```
+
+## ARIMA (3,0,3)
+
+```{r}
+modelover2=Arima(train.ts, order=c(3,0,3),method="ML")
+summary(modelover2) #107.78
+lmtest::coeftest(modelover2) #ar1 dan ar2 tidak signifikan
+```
+
+## ARIMA(4,0,2)
+
+```{r}
+modelover3=Arima(train.ts, order=c(4,0,2),method="ML")
+summary(modelover3) #98.72
+lmtest::coeftest(modelover3) #ar3, ar4, ma1, dan ma2 tidak signifikan
+```
+Dari ketiga model overfitting, didapatkan nilai AIC yang lebih besar daripada AIC model sebelum dioverfitting. Selain itu, beberapa parameter di ketiga model yang dioverfitting tersebut juga tidak signifikan. Oleh karena itu, model yang dipilih adalah model sebelum dioverfitting, yaitu ARIMA(3,0,2) karena memiliki AIC paling kecil dan semua parameternya signifikan.
+
+# Peramalan
+
+Peramalan dilakukan menggunakan fungsi `forecast()` . Contoh peramalan berikut ini dilakukan untuk 26 periode ke depan.
+
+```{r}
+ramalan <- forecast::forecast(model5, h = 26) 
+ramalan
+data.ramalan <- ramalan$mean
+plot(ramalan)
+```
+
+Berdasarkan hasil plot ramalan di atas, dapat dilihat bahwa ramalan
+ARIMA(3,0,2) memiliki pola naik-turun (musiman) hingga akhir periode.
+
+Selanjutnya, dapat dicari nilai akurasi antara hasil ramalan dengan data uji sebaga berikut.
+
+```{r}
+perbandingan<-matrix(data=c(head(test.ts, n=26), data.ramalan),
+                     nrow=26,ncol=2)
+colnames(perbandingan)<-c("Aktual","Hasil Forecast")
+perbandingan
+accuracy(ts(data.ramalan), head(test.ts,n=26))
+```
+
+Dari hasil diperoleh nilai MAPE sebesar 0.837928.
