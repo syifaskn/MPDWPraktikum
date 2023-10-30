@@ -1,0 +1,369 @@
+---
+title: "TUGAS Kelompok MPDW 8"
+author: "Farrel Gilbran"
+date: "2023-10-30"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# KELOMPOK 17
+
+1.  Syifa Khairunnisa (G1401211012)
+2.  Radhitya Harma (G1401211021)
+3.  Farrel Gilbran (G1401211057)
+4.  Alfikri Ihsan (G1401211058)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Call Packages
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(forecast)
+library(TSA)
+library(TTR)
+library(aTSA)
+library(graphics)
+library(imputeTS)
+```
+
+# Input Data
+
+Data Merupakan Harga Cabai Keriting Pada Provinsi Sumatra Barat Pada Tahun 2018-2021 per minggu
+
+```{r}
+library(rio)
+data <- import("https://raw.githubusercontent.com/syifaskn/MPDWPraktikum/main/Data%20Kelompok/kelompok.csv")
+data
+head(data)
+```
+
+# Pengecekan Missing Value
+
+```{r}
+sum(is.na(data))
+```
+
+# Imputasi Missing Value
+
+```{r}
+dataimp = na_interpolation(data, option = "spline")
+head(dataimp) %>% knitr::kable(caption = "Data yang sudah diimputasi")
+```
+
+# Ubah Format Data time series
+
+```{r}
+data.ts <- ts(dataimp$Cabai)
+```
+
+# Eksplorasi Data
+
+## Plot Data Penuh
+
+```{r}
+plot.ts(data.ts, lty=1, xlab="Periode", ylab="Harga", main="Plot Data Harga Cabai Keriting")
+```
+
+Berdasarkan plot data deret waktu, terlihat bahwa data memiliki trend naik turun seaseonal. Berdasarkan pola data, pembagian data latih dan data uji ditetapkan dengan proporsi 80%:20%.
+
+Berdasarkan plot data deret waktu pada data total, terlihat bahwa data cenderung memiliki trend yang turun lalu naik jauh dan cenderung tidak bergerak pada nilai tengah tertentu. Hal ini mengindikasikan bahwa data tidak stasioner dalam rataan.
+
+## Plot Data Latih
+
+```{r}
+datatrain<-data.ts[1:167]
+train.ts<-ts(datatrain)
+plot.ts(train.ts, lty=1, xlab="Priode", ylab="Harga", main="Plot Harga Cabai Keriting")
+```
+
+Berdasarkan plot data deret waktu pada data latih, terlihat bahwa data cenderung memiliki trend yang turun lalu naik seasonal dan cenderung tidak bergerak pada nilai tengah tertentu. Hal ini mengindikasikan bahwa data tidak stasioner dalam rataan.
+
+### Plot Data Uji
+
+```{r}
+datatest<-data.ts[168:209]
+test.ts<-ts(datatest)
+plot.ts(test.ts, lty=1, xlab="Periode", ylab="Harga", main="Plot Harga Cabai Keriting")
+```
+
+Berdasarkan plot data deret waktu pada data Uji, terlihat bahwa data cenderung memiliki trend yang turun lalu naik dan cenderung tidak bergerak pada nilai tengah tertentu. Hal ini mengindikasikan bahwa data tidak stasioner dalam rataan.
+
+# Uji Stasioneritas Data
+
+## Plot ACF
+
+```{r}
+acf(train.ts)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF data menurun secara perlahan (*tails of slowly*). Hal ini juga menjadi indikasi bahwa data tidak stasioner dalam rataan
+
+## Uji ADF
+
+```{r}
+tseries::adf.test(train.ts)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.2989 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa data tidak stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF, sehingga ketidakstasioneran model kedepannya harus ditangani
+
+## Plot Box-Cox
+
+```{r}
+index <- seq(1:167)
+bc = boxcox(train.ts~index, lambda = seq(-3,10,by=1))
+#Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+
+Plot Boxcox menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **-0.2424** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-0.6363** dan batas atas **0.1515**. Selang tersebut tidak memuat nilai satu sehingga dapat dikatakan bahwa data bangkitan tidak stasioner dalam ragam.
+
+## Transformasi Data
+
+```{r}
+train.ts.tr <- log(train.ts)
+plot.ts(train.ts.tr, lty=1, xlab="waktu", ylab="Data Transformasi", main="Plot Transformasi Data")
+
+```
+
+## Uji Kestasioneran Data Dalam Ragam Kembali
+
+```{r}
+index <- seq(1:167)
+bc = boxcox(train.ts.tr~index, lambda = seq(-1,10,by=1))
+#Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+
+Plot Boxcox menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **-1** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-1** dan batas atas **3.666**. Selang tersebut tidak memuat nilai satu sehingga dapat dikatakan bahwa data bangkitan stasioner dalam ragam.
+
+## Penanganan Ketidakstasioneran Data Dalam Rataan
+
+```{r}
+train.diff<-diff(train.ts.tr,differences = 2) 
+plot.ts(train.diff, lty=1, xlab="waktu", ylab="Data Difference 2 Harga Cabai Keriting", main="Plot Difference Harga Cabai Keriting")
+```
+
+Berdasarkan plot data deret waktu, terlihat bahwa data sudah stasioner dalam rataan ditandai dengan data bergerak pada nilai tengah tertentu (tidak terdapat trend ataupun musiman pada data)
+
+### Plot ACF
+
+```{r}
+acf(train.diff)
+```
+
+Berdasarkan plot tersebut, terlihat bahwa plot ACF cuts off pada lag ke 2. Hal ini menandakan data sudah stasioner dalam rataan dan ketidakstasioneran data telah berhasil tertangani.
+
+### Uji ADF
+
+```{r}
+tseries::adf.test(train.diff)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ atau data stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF, sehingga dalam hal ini ketidakstasioneran data sudah berhasil ditangani dan dapat dilanjutkan ke pemodelan
+
+## Identifikasi Model
+
+### Plot ACF
+
+```{r}
+acf(train.diff)
+```
+
+Berdasarkan plot tersebut, terlihat bahwa plot ACF cenderung *cuts off* pada lag ke 2, sehingga jika plot PACF dianggap *tails of*, maka model tentatifnya adalah ARIMA(0,2,2).
+
+### Plot PACF
+
+```{r}
+pacf(train.diff)
+```
+
+Berdasarkan plot tersebut, terlihat bahwa plot PACF cenderung *cuts off* pada lag ke 9
+
+### Plot EACF
+
+```{r}
+eacf(train.diff)
+```
+
+Identifikasi model menggunakan plot EACF dilakukan dengan melihat ujung segitiga pada pola segitiga nol. Dalam hal ini model tentatif yang terbentuk adalah ARIMA(0,2,2), ARIMA(0,2,3), ARIMA(1,2,2), dan ARIMA(1,2,3).
+
+# Pendugaan Parameter Model Tentatif
+
+## ARIMA(0,2,2)
+
+```{r}
+library(forecast)
+model1.da=Arima(train.diff, order=c(0,2,2),method="ML")
+summary(model1.da) #AIC=-135.11
+lmtest::coeftest(model1.da) #seluruh parameter signifikan
+```
+
+## ARIMA(0,2,3)
+
+```{r}
+model2.da=Arima(train.diff, order=c(0,2,3),method="ML")
+summary(model2.da) #AIC=-211.08
+lmtest::coeftest(model2.da) #seluruh parameter signifikan
+```
+
+#### ARIMA(1,2,2)
+
+```{r}
+model3.da=Arima(train.diff, order=c(1,2,2),method="ML")
+summary(model3.da) #AIC=-159.64
+lmtest::coeftest(model3.da) #seluruh parameter signifikan
+```
+
+#### ARIMA(1,2,3)
+
+```{r}
+model4.da=Arima(train.diff, order=c(1,1,1),method="ML")
+summary(model4.da) #AIC=-174.77
+lmtest::coeftest(model4.da) #seluruh parameter signifikan
+```
+
+Berdasarkan pendugaan parameter di atas, nilai AIC terkecil dimiliki oleh model ARIMA(0,2,3) lalu juga seluruhnya signifikan sehingga model yang dipilih adalah model ARIMA(0,2,3).
+
+## Analisis Sisaan
+
+Model terbaik hasil identifikasi kemudian dicek asumsi sisaannya. Sisaan model ARIMA harus memenuhi asumsi normalitas, kebebasan sisaan, dan kehomogenan ragam. Diagnostik model dilakukan secara eksplorasi dan uji formal.
+
+### Eksplorasi Sisaan
+
+```{r}
+#Eksplorasi 
+sisaan.da <- model2.da$residuals 
+par(mfrow=c(2,2)) 
+qqnorm(sisaan.da) 
+qqline(sisaan.da, col = "blue", lwd = 2) 
+plot(c(1:length(sisaan.da)),sisaan.da) 
+acf(sisaan.da) 
+pacf(sisaan.da) 
+par(mfrow = c(1,1))
+```
+
+Berdasarkan plot kuantil-kuantil normal, secara eksplorasi ditunjukkan sisaan menyebar normal ditandai dengan titik titik yang tidak mengikuti garis $45^{\circ}$. Kemudian dapat dilihat juga lebar pita sisaan yang cenderung sama menandakan bahwa sisaan memiliki ragam yang homogen. Plot ACF dan PACF sisaan ARIMA(0,2,3) juga cenderung tidak signifikan pada 20 lag awal yang menandakan saling bebas. Kondisi ini akan diuji lebih lanjut dengan uji formal.
+
+### Uji Formal
+
+```{r}
+#1) Sisaan Menyebar Normal 
+ks.test(sisaan.da,"pnorm")  #tolak H0 > sisaan tidak menyebar normal
+```
+
+Selain dengan eksplorasi, asumsi tersebut dapat diuji menggunakan uji formal. Pada tahapan ini uji formal yang digunakan untuk normalitas adalah uji Kolmogorov-Smirnov (KS). Hipotesis pada uji KS adalah sebagai berikut.
+
+$H_0$ : Sisaan menyebar normal
+
+$H_1$ : Sisaan tidak menyebar normal
+
+Berdasarkan uji KS tersebut, didapat *p-value* sebesar 2.2e-16 yang kurang dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa sisaan tidak menyebar normal.
+
+```{r}
+#2) Sisaan saling bebas/tidak ada autokorelasi 
+Box.test(sisaan.da, type = "Ljung")  #tak tolak H0 > sisaan saling bebas
+```
+
+Selanjutnya akan dilakukan uji formal untuk kebebasan sisaan menggunakan uji Ljung-Box. Hipotesis yang digunakan adalah sebagai berikut.
+
+$H_0$ : Sisaan saling bebas
+
+$H_1$ : Sisaan tidak tidak saling bebas
+
+Berdasarkan uji Ljung-Box tersebut, didapat *p-value* sebesar 0.4189 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa sisaan saling bebas.
+
+```{r}
+#3) Sisaan homogen 
+Box.test((sisaan.da)^2, type = "Ljung")  #tak tolak H0 > sisaan homogen
+```
+
+Hipotesis yang digunakan untuk uji kehomogenan ragam adalah sebagai berikut.
+
+$H_0$ : Ragam sisaan homogen
+
+$H_1$ : Ragam sisaan tidak homogen
+
+Berdasarkan uji Ljung-Box terhadap sisaan kuadrat tersebut, didapat *p-value* sebesar 0.6603 yang lebih besar dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa ragam sisaan homogen.
+
+```{r}
+#4) Nilai tengah sisaan sama dengan nol 
+t.test(sisaan.da, mu = 0, conf.level = 0.95)  #tak tolak h0 > nilai tengah sisaan sama dengan 0
+```
+
+Terakhir, dengan uji-t, akan dicek apakah nilai tengah sisaan sama dengan nol. Hipotesis yang diujikan sebagai berikut.
+
+$H_0$ : nilai tengah sisaan sama dengan 0
+
+$H_1$ : nilai tengah sisaan tidak sama dengan 0
+
+Berdasarkan uji-ttersebut, didapat *p-value* sebesar 0.8399 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa nilai tengah sisaan sama dengan nol.
+
+## Overfitting
+
+Tahapan selanjutnya adalah *overfitting* dilakukan dengan menaikkan orde AR(p) dan MA(q) dari model ARIMA(0,2,3) untuk melihat apakah terdapat model lain yang lebih baik dari model saat ini. Kandidat model *overfitting* adalah ARIMA(0,2,4) dan ARIMA(1,2,3).
+
+```{r}
+#---OVERFITTING---#
+model1a.ma2=Arima(train.diff, order=c(0,2,4),method="ML")
+summary(model1a.ma2) #-210.26
+lmtest::coeftest(model1a.ma2) 
+
+model1b.ma2=Arima(train.diff, order=c(1,2,3),method="ML")
+summary(model1b.ma2) #-206
+lmtest::coeftest(model1b.ma2) 
+
+#model yang dipilih adalah model awal, yaitu ARIMA(0,2,3) karena nilai AIC lebih kecil
+```
+
+# Peramalan
+
+Peramalan dilakukan menggunakan fungsi `forecast()` . Contoh peramalan berikut ini dilakukan untuk 42 hari ke depan.
+
+```{r}
+#---FORECAST---#
+ramalan.da <- forecast::forecast(model2.da, h = 42) 
+ramalan.da
+data.ramalan.da <- ramalan.da$mean
+plot(ramalan.da)
+```
+
+```{r}
+pt_1 <- train.ts[167] #nilai akhir data latih
+hasil.forc.Diff <- data.ramalan.da
+hasil <- diffinv(hasil.forc.Diff, differences = 2) + pt_1
+#has.1 sama hasilnta dengan: cumsum(c(pt_1,hasil.forc.Diff))
+ts.plot(train.ts,hasil)
+```
+
+Berdasarkan hasil plot ramalan di atas, dapat dilihat bahwa ramalan ARIMA(0,2,3) cenderung stabil hingga akhir periode. Selanjutnya, dapat dicari nilai akurasi antara hasil ramalan dengan data uji sebagai berikut.
+
+```{r}
+perbandingan.da<-matrix(data=c(head(test.ts, n=42), hasil[-1]),
+                     nrow = 42, ncol = 2)
+colnames(perbandingan.da)<-c("Aktual","Hasil Forecast")
+perbandingan.da
+accuracy(ts(hasil[-1]), head(test.ts, n=42))
+```
+
+Nilai MAPE 46%. Berarti model masih kurang baik dalam memprediksi nilai harga cabe keriting di provinsi Sumatra Barat diakrenakan data bersifat seasonal dan kemungkinan akan lebih baik jika menggunakan model SARIMA.
