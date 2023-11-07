@@ -1,0 +1,231 @@
+---
+title: "MPDW_Kelompok 17"
+author: "Syifa Khairunnisa"
+date: "2023-10-29"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# KELOMPOK 17
+
+1.  Syifa Khairunnisa (G1401211012)
+2.  Radhitya Harma (G1401211021)
+3.  Farrel Gilbran (G1401211057)
+4.  Alfikri Ihsan (G1401211058)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Call Packages
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+library(forecast)
+library(TSA)
+library(TTR)
+library(aTSA)
+library(graphics)
+library(imputeTS)
+```
+
+# Input Data
+
+Data Merupakan Harga Cabai Keriting Pada Provinsi Sumatra Barat Pada Tahun 2018-2021 per minggu
+
+```{r}
+library(rio)
+data <- import("https://raw.githubusercontent.com/syifaskn/MPDWPraktikum/main/Data%20Kelompok/kelompok.csv")
+data
+head(data)
+```
+
+# Pengecekan Missing Value
+
+```{r}
+sum(is.na(data))
+```
+
+# Imputasi Missing Value
+
+```{r}
+dataimp = na_interpolation(data, option = "spline")
+head(dataimp) %>% knitr::kable(caption = "Data yang sudah diimputasi")
+```
+
+# Ubah Format Data time series
+
+```{r}
+data.ts <- ts(dataimp$Cabai)
+```
+
+# Eksplorasi Data
+
+## Plot Data Penuh
+
+```{r}
+plot.ts(data.ts, lty=1, xlab="Periode", ylab="Harga", main="Plot Data Harga Cabai Keriting")
+```
+
+Berdasarkan plot data deret waktu, terlihat bahwa data memiliki trend naik turun seaseonal. Berdasarkan pola data, pembagian data latih dan data uji ditetapkan dengan proporsi 80%:20%.
+
+Berdasarkan plot data deret waktu pada data total, terlihat bahwa data cenderung memiliki trend yang turun lalu naik jauh dan cenderung tidak bergerak pada nilai tengah tertentu. Hal ini mengindikasikan bahwa data tidak stasioner dalam rataan.
+
+## Plot Data Latih
+
+```{r}
+datatrain<-data.ts[1:167]
+train.ts<-ts(datatrain)
+plot.ts(train.ts, lty=1, xlab="Priode", ylab="Harga", main="Plot Harga Cabai Keriting")
+```
+
+Berdasarkan plot data deret waktu pada data latih, terlihat bahwa data cenderung memiliki trend yang turun lalu naik seasonal dan cenderung tidak bergerak pada nilai tengah tertentu. Hal ini mengindikasikan bahwa data tidak stasioner dalam rataan.
+
+### Plot Data Uji
+
+```{r}
+datatest<-data.ts[168:209]
+test.ts<-ts(datatest)
+plot.ts(test.ts, lty=1, xlab="Periode", ylab="Harga", main="Plot Harga Cabai Keriting")
+```
+
+Berdasarkan plot data deret waktu pada data Uji, terlihat bahwa data cenderung memiliki trend yang turun lalu naik dan cenderung tidak bergerak pada nilai tengah tertentu. Hal ini mengindikasikan bahwa data tidak stasioner dalam rataan.
+
+# Plot per musim
+```{r}
+seasonplot(data.ts,5,main="Harga Cabai Keriting", ylab="Harga",year.labels = TRUE, col=rainbow(18))
+```
+
+# Uji Stasioneritas Data
+
+## Plot ACF
+
+```{r}
+acf(train.ts)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF data menurun secara perlahan (*tails of slowly*). Hal ini juga menjadi indikasi bahwa data tidak stasioner dalam rataan
+
+## Uji ADF
+
+```{r}
+tseries::adf.test(train.ts)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.2989 yang lebih besar dari taraf nyata 5% sehingga tak tolak $H_0$ dan menandakan bahwa data tidak stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF, sehingga ketidakstasioneran model kedepannya harus ditangani
+
+## Plot Box-Cox
+
+```{r}
+index <- seq(1:167)
+bc = boxcox(train.ts~index, lambda = seq(-3,10,by=1))
+#Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+
+Plot Boxcox menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **-0.2424** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-0.6363** dan batas atas **0.1515**. Selang tersebut tidak memuat nilai satu sehingga dapat dikatakan bahwa data bangkitan tidak stasioner dalam ragam.
+
+## Transformasi Data
+```{r}
+trans = log(data.ts)
+plot.ts(trans, lty=1, xlab="waktu", ylab="Data Transformasi", main="Plot Transformasi Data")
+```
+
+# Plot per musim
+```{r}
+seasonplot(trans,5,main="Harga Cabai Keriting", ylab="Harga",year.labels = TRUE, col=rainbow(18))
+```
+
+# Pembagian Data
+```{r}
+traintrans<- subset(trans,start=1,end=167)
+testtrans <- subset(trans,start=168,end=209)
+```
+
+
+# Tes Kehomogenan Ragam
+```{r}
+index <- seq(1:167)
+bc = boxcox(traintrans~index, lambda = seq(-1,10,by=1))
+#Nilai Rounded Lambda
+lambda <- bc$x[which.max(bc$y)]
+lambda
+#SK
+bc$x[bc$y > max(bc$y) - 1/2 * qchisq(.95,1)]
+```
+Plot Boxcox menunjukkan nilai *rounded value* ($\lambda$) optimum sebesar **-1** dan pada selang kepercayaan 95% nilai memiliki batas bawah **-1** dan batas atas **3.666**. Selang tersebut tidak memuat nilai satu sehingga dapat dikatakan bahwa data bangkitan stasioner dalam ragam.
+
+# Penanganan Ketidakstasioneran Data Dalam Rataan
+
+```{r}
+train.diff <- diff(traintrans,differences = 2) 
+plot.ts(train.diff, lty=1, xlab="waktu", ylab="Data Difference 2 Harga Cabai Keriting", main="Plot Difference Harga Cabai Keriting")
+```
+
+Berdasarkan plot data deret waktu, terlihat bahwa data sudah stasioner dalam rataan ditandai dengan data bergerak pada nilai tengah tertentu (tidak terdapat trend ataupun musiman pada data)
+
+### Plot ACF
+
+```{r}
+acf(train.diff)
+```
+Berdasarkan plot tersebut, terlihat bahwa plot ACF cuts off pada lag ke 2. Hal ini menandakan data sudah stasioner dalam rataan dan ketidakstasioneran data telah berhasil tertangani.
+
+### Uji ADF
+
+```{r}
+tseries::adf.test(train.diff)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih kecil dari taraf nyata 5% sehingga tolak $H_0$ atau data stasioner dalam rataan. Hal ini sesuai dengan hasil eksplorasi menggunakan plot time series dan plot ACF, sehingga dalam hal ini ketidakstasioneran data sudah berhasil ditangani dan dapat dilanjutkan ke pemodelan.
+
+# Melakukan proses differencing pada series musiman
+```{r}
+diff5 <- diff(traintrans,5)
+     plot(diff5, main = "Time series plot D=5")
+     axis(1, at=0:20/5, labels=0:20)
+```
+
+## ACF
+```{r}
+acf2<- acf(diff5,lag.max=20,xaxt="n", main="ACF d2")
+```
+
+```{r}
+acf2$lag <- acf2$lag * 5
+     acf2.1 <- as.data.frame(cbind(acf2$acf,acf2$lag))
+     acf2.2 <- acf2.1[which(acf2.1$V2%%5==0),]
+     barplot(height=acf2.2$V1,names.arg=acf2.2$V2,ylab="ACF", xlab="Lag")
+```
+
+# Melakukan pembedaan kedua pada data yang telah dilakukan pembedaan pada series musimannya
+```{r}
+diff5.1 <- diff(diff5,2)
+     plot(diff5.1, main = "Time series plot  d=2, D=5")
+```
+
+# Identifikasi Model
+```{r}
+acf(diff5.1,20)
+pacf(diff5.1,20)
+eacf(diff5.1)
+```
+```{r}
+auto.arima(traintrans)
+```
+
